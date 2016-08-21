@@ -25,7 +25,7 @@ public class UI_UnlockCircle : MonoBehaviour {
 	//Outer
 	const float cwOuter_cwFillAmount = 1f / 24f;                //!< Normalized value a scale of ruler.
 																//Inner															//Outer
-	const float cwInner_LapTime_Full360deg = 1f;                        //!< Full time of cw 360deg.
+	const float cwInner_LapTime_Full360deg = 1f;                //!< Full time of cw 360deg.
 	const float cwInner_Time_a_RulerScale = cwInner_LapTime_Full360deg / 72f;   //!< Time of a ruler scale.
 	const float cwInner_cwFillAmount = 1f / 72f;                //!< Normalized value a scale of ruler.
 
@@ -39,7 +39,7 @@ public class UI_UnlockCircle : MonoBehaviour {
 	int unlockCounter;
 	bool div72Done = false;
 
-	const int unlockCountSec = 6;//[sec]
+	const int unlockCountSec = 10; //!< Unlock time[sec]
 	const float OUTER_DIV24 = 24f;
 	float a_div24 = (float)unlockCountSec / OUTER_DIV24;//24 is div in circle.
 
@@ -69,64 +69,153 @@ public class UI_UnlockCircle : MonoBehaviour {
 		textNumeric = GetObjectFind("/" + UI_Gauge + "/Text_Numeric");
 		textNumericTxt = textNumeric.GetComponent<Text>();
 
-		GauseSetup();
+		actInactive();//Initial
+		actZoomIn();
+		InitSound();
 	}
-	void GauseSetup() {
+	enum actionMode {
+		inactive = 0,
+		zoomIn,
+		active,
+		zoomOut
+	}
+	actionMode actMode = actionMode.inactive;
+	const float zoomScaleResolution = 0.05f;//!< Zoom resolution(Zoom speed).
+	float zoomScale;
+
+	void init() {
+		textNumericTxt.text = displayCounter.ToString("00");
+		image_Outer.fillAmount = 0f;
+		image_Inner.fillAmount = 0f;
 		displayTime = 0f;
 		div72timer = 0f;
 		displayCounter = 0;
 		unlockCounter = 1;
 		unlock = false;
-
-		canvas.transform.localScale = new Vector3(0,0,0);
 	}
-	bool active = false;
-	void GauseStart()
-	{
-		unlock = false;
-		active = true;
-		canvas.transform.localScale = new Vector3(1, 1, 1);
+
+	void actZoomOut() {
+		actMode = actionMode.zoomOut;
+		canvas.transform.localScale = new Vector3(0, 0, 0);
+
+	}
+	void actZoomIn() {
+		init();
+		actMode = actionMode.zoomIn;
+		zoomScale = 0;
+		canvas.transform.localScale = new Vector3(zoomScale, zoomScale, zoomScale);
+	}
+	void actActive() {
+		actMode = actionMode.active;
+		zoomScale = 1;
+		canvas.transform.localScale = new Vector3(zoomScale, zoomScale, zoomScale);
+	}
+	void actInactive(){
+		init();
+		actMode = actionMode.inactive;
+		zoomScale = 0;
+		canvas.transform.localScale = new Vector3(zoomScale, zoomScale, zoomScale);
 	}
 	float t = 0;
-	void Update () {
-		//debug
-		if (active == false) {
-			t += Time.deltaTime;
-			if (t > 5) GauseStart();
-		}
-		//
+	void Update() {
+		DebugModeCon(); //Make debug trigger
+		//-----
+		switch (actMode) {
+			case actionMode.zoomIn:
+				zoomScale += zoomScaleResolution;
+				if (zoomScale > 1.0f) {
+					zoomScale = 1.0f;
+					audioSource_opupUI01.Play();
+					actActive();
+				}
+				canvas.transform.localScale = new Vector3(zoomScale, zoomScale, zoomScale);
+				break;
+			case actionMode.active:
+				if (unlock == false) {
+					div72timer += Time.deltaTime;
+					if (div72timer > 1.0f) {
+						div72timer -= 1.0f;
+						displayCounter++;
+						div72Done = true;
+					}
+					else {
+						div72Done = false;
+					}
+					image_Inner.fillAmount = div72timer;
 
-		if (active == false) return;
-		if (unlock == true) return;
+					//Outer
+					div24timer += Time.deltaTime;
+					if (div24timer > a_div24) {
+						div24timer -= a_div24;
+						unlockCounter++;
+						image_Outer.fillAmount = (float)unlockCounter / OUTER_DIV24;
+					}
 
+					displayTime += Time.deltaTime;
+					textNumericTxt.text = displayCounter.ToString("00");
 
-		div72timer += Time.deltaTime;
-		if (div72timer > 1.0f) {
-			div72timer -= 1.0f;
-			displayCounter++;
-			div72Done = true;
-		}
-		else {
-			div72Done = false;
-		}
-		image_Inner.fillAmount = div72timer;
+					if ((unlockCounter > OUTER_DIV24)) {
+						if ((div72Done == true)) {
+							unlock = true;
+							audioSource_opupUI01.Play();
+						}
+					}
+				}
+				break;
+			case actionMode.zoomOut:
+				zoomScale -= zoomScaleResolution;
+				if (zoomScale < 0.0f) {
+					zoomScale = 0.0f;
+					actInactive();
+				}
+				canvas.transform.localScale = new Vector3(zoomScale, zoomScale, zoomScale);
 
-		//Outer
-		div24timer += Time.deltaTime;
-		if (div24timer > a_div24) {
-			div24timer -= a_div24;
-			unlockCounter++;
-			image_Outer.fillAmount = (float)unlockCounter / OUTER_DIV24;
-		}
-		else {
-		}
-
-		
-		displayTime += Time.deltaTime;
-		textNumericTxt.text = displayCounter.ToString("00");
-
-		if ((unlockCounter > OUTER_DIV24) && (div72Done==true)) {
-			unlock = true;
+				break;
+			default:
+				break;
 		}
 	}
+	AudioSource audioSource_opupUI01;
+	void InitSound() {
+		const string SNDNAME_PopupUI01 = "push59_c";
+		AudioClip audioClip_PopupUI01;
+		audioClip_PopupUI01 = Resources.Load<AudioClip>(SNDNAME_PopupUI01);
+		audioSource_opupUI01 = gameObject.AddComponent<AudioSource>();
+
+		audioSource_opupUI01.clip = audioClip_PopupUI01; //音色(wav)をチャンネルに紐付け
+		audioSource_opupUI01.volume = 1.0f;  //ボリューム設定。0～1.0範囲
+	}
+
+
+
+	//Begin: Make debug trigger
+	void DebugModeCon() {
+		t += Time.deltaTime;
+		switch (actMode) {
+			case actionMode.zoomIn:
+				t = 0;
+				break;
+			case actionMode.active:
+				if (unlock == true) {
+					if (t > (float)unlockCountSec + 1) {
+						actZoomOut();
+						t = 0;
+					}
+				}
+				break;
+			case actionMode.zoomOut:
+				t = 0;
+				break;
+			case actionMode.inactive:
+				if (t > 2) {
+					actZoomIn();
+					t = 0;
+				}
+				break;
+			default:
+				break;
+
+		}
+	}
+	//End: Make debug trigger
 }
